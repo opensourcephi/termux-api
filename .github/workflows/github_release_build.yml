@@ -4,6 +4,11 @@ on:
   release:
     types:
       - published
+  workflow_dispatch:
+    inputs:
+      version_name:
+        description: 'Release version name (e.g. v0.53.0). Must follow semver: major.minor.patch'
+        required: true
 
 jobs:
   build:
@@ -14,21 +19,53 @@ jobs:
       - name: Clone repository
         uses: actions/checkout@v4
         with:
-          ref: ${{ env.GITHUB_REF }}
+          fetch-depth: 0
+
+      - name: Create tag and release (workflow_dispatch only)
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          set -e
+          VERSION_NAME="${{ github.event.inputs.version_name }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          if git rev-parse "$VERSION_NAME" >/dev/null 2>&1; then
+            echo "Tag '$VERSION_NAME' already exists, skipping tag creation."
+          else
+            git tag "$VERSION_NAME"
+            git push origin "$VERSION_NAME"
+          fi
+
+          if gh release view "$VERSION_NAME" >/dev/null 2>&1; then
+            echo "Release '$VERSION_NAME' already exists, skipping release creation."
+          else
+            gh release create "$VERSION_NAME" \
+              --title "$VERSION_NAME" \
+              --notes "Release $VERSION_NAME" \
+              --target "${{ github.sha }}"
+          fi
 
       - name: Build and upload files to release
         shell: bash {0}
         run: |
-          exit_on_error() {
-              echo "$1"
-              echo "Deleting '$RELEASE_VERSION_NAME' release and '$GITHUB_REF' tag"
-              hub release delete "$RELEASE_VERSION_NAME"
-              git push --delete origin "$GITHUB_REF"
-              exit 1
-          }
+          if [ "$GITHUB_EVENT_NAME" == "workflow_dispatch" ]; then
+            RELEASE_VERSION_NAME="${{ github.event.inputs.version_name }}"
+            exit_on_error() {
+                echo "$1"
+                exit 1
+            }
+          else
+            exit_on_error() {
+                echo "$1"
+                echo "Deleting '$RELEASE_VERSION_NAME' release and '$GITHUB_REF' tag"
+                hub release delete "$RELEASE_VERSION_NAME"
+                git push --delete origin "$GITHUB_REF"
+                exit 1
+            }
+            RELEASE_VERSION_NAME="${GITHUB_REF/refs\/tags\//}"
+          fi
 
           echo "Setting vars"
-          RELEASE_VERSION_NAME="${GITHUB_REF/refs\/tags\//}"
           if ! printf "%s" "${RELEASE_VERSION_NAME/v/}" | grep -qP '^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\+([0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*))?$'; then
             exit_on_error "The release version '${RELEASE_VERSION_NAME/v/}' is not a valid version as per semantic version '2.0.0' spec in the format 'major.minor.patch(-prerelease)(+buildmetadata)'. https://semver.org/spec/v2.0.0.html."
           fi
