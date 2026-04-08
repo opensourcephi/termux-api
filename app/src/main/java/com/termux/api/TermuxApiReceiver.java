@@ -42,6 +42,7 @@ import com.termux.api.apis.ToastAPI;
 import com.termux.api.apis.TorchAPI;
 import com.termux.api.apis.UsbAPI;
 import com.termux.api.apis.VibrateAPI;
+import com.termux.api.apis.VpnAPI;
 import com.termux.api.apis.VolumeAPI;
 import com.termux.api.apis.WallpaperAPI;
 import com.termux.api.apis.WifiAPI;
@@ -249,6 +250,9 @@ public class TermuxApiReceiver extends BroadcastReceiver {
                 break;
             case "Volume":
                 VolumeAPI.onReceive(this, context, intent);
+                break;
+            case "Vpn":
+                VpnAPI.onReceive(context, intent);
                 break;
             case "Wallpaper":
                 WallpaperAPI.onReceive(context, intent);
